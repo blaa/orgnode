@@ -601,7 +601,7 @@ class Orgnode(object):
         n = n + ' ' + self.todo + ' '
         if self.prty:
             n = n +  '[#' + self.prty + '] '
-        n = n + self.headline
+        n = n + repr(self.headline)
         n = "%-60s " % n     # hack - tags will start in column 62
         closecolon = ''
         for t in sorted(self.tags):
