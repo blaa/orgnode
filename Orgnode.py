@@ -610,6 +610,6 @@ class Orgnode(object):
         n = n + closecolon
 # Need to output Scheduled Date, Deadline Date, property tags The
 # following will output the text used to construct the object
-        n = n + "\n" + self.body
+        n = n + "\n" + repr(self.body)
 
         return n
