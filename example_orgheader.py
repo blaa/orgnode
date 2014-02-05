@@ -3,11 +3,7 @@
 
 """
 Parse org-mode agendas, task lists, etc. and return simple reminders
-to be included in environment status bar or shell. In general:
-Generate agenda view for a shell.
-
-License: MIT
-Author: Tomasz bla Fortuna /bla at thera dot be/
+to be included in environment status bar or shell.
 """
 
 import datetime as dt
@@ -40,7 +36,6 @@ def load_data():
         db += orgnode.makelist(path, todo_default=todos)
     return db
 
-
 def until(date, relative):
     """
     Return time difference taking into account that date might not have a time given.
@@ -52,9 +47,7 @@ def until(date, relative):
         date = dt.datetime(date.year, date.month, date.day, 23, 59, 59)
 
     delta = (date - relative).total_seconds()
-    if delta < 0:
-        return None, None # Past event
-
+    # If negative - then a past event.
     return date, delta / 60.0 / 60.0 / 24.0
 
 
@@ -71,16 +64,22 @@ def closest(date_list, relative):
 
     for date in sorted(date_list):
         converted_date, days = until(date, relative)
-        if days is None:
-            # Past event
-            continue
 
         closest_date = date
         closest_converted_date = converted_date
         closest_delta = days
+
+        if closest_delta < 0:
+            # Past event, iterate more
+            continue
+        # This is a first future event, do not check more.
         break
 
-    return (closest_converted_date, closest_date, closest_delta)
+    return {
+        'converted_date': closest_converted_date,
+        'date': closest_date,
+        'delta': closest_delta
+    }
 
 
 def get_incoming(db):
@@ -94,22 +93,33 @@ def get_incoming(db):
     today = dt.datetime.today()
 
     incoming = []
+    unfinished = []
 
     for entry in db:
+        # Iterate over entries
+
+        # Ignore ones marked as "done/finished/closed"
         if entry.todo in todos_ignored:
             continue
 
         def analyze_dates(dates, datetype):
-            closest_converted_date, closest_date, closest_delta = closest(dates, relative=today)
+            data = closest(dates, relative=today)
 
-            if closest_delta is not None and closest_delta < horizont:
-                incoming.append((closest_converted_date, {
-                    'eventtype': datetype,
-                    'delta': closest_delta,
-                    'closest_date': closest_date,
-                    'closest_converted_date': closest_converted_date,
-                    'entry': entry,
-            }))
+            data.update({
+                'eventtype': datetype,
+                'entry': entry,
+            })
+
+            if data['delta'] is None:
+                return # No dates
+            elif data['delta'] < 0:
+                # Past event
+                unfinished.append((data['converted_date'], data))
+            else:
+                # Future event
+                if data['delta'] <= horizont:
+                    incoming.append((data['converted_date'], data))
+
 
         analyze_dates(entry.datelist, 'TIMESTAMP')
 
@@ -125,7 +135,7 @@ def get_incoming(db):
 
         if deadline:
             analyze_dates([deadline], "DEADLINE")
-    return incoming
+    return incoming, unfinished
 
 
 def report_stat(incoming_list):
@@ -168,6 +178,39 @@ def report_stat(incoming_list):
     #s = "T %d->%d-->%d" % (stat_today, stat_tomorrow, stat_rest)
     return s
 
+def _get_marker(eventtype):
+    if eventtype == 'DEADLINE':
+        marker = 'D'
+    elif eventtype == 'SCHEDULED':
+        marker = 'S'
+    elif eventtype == 'RANGE':
+        marker = 'R'
+    else:
+        marker = ' '
+    return marker
+
+def _get_delta(delta, accurate=False):
+    import math
+    days = int(math.floor(delta))
+    if days == 0:
+        # Today
+        if accurate:
+            hours = math.floor(delta*24)
+            if hours <= 0.1:
+                return "NOW"
+            if hours == 1:
+                return "today in " + str(int(hours)) + " hour"
+            if hours > 1:
+                return "today in " + str(int(hours)) + " hours"
+        else:
+            return "today"
+    elif days > 1:
+        return "in " + str(days) + " days"
+    elif days < 0:
+        return str(-days) + " days ago"
+    elif days == 1:
+        return "1 day"
+
 
 def report_incoming(incoming_list):
     u"Report incoming tasks for following days"
@@ -189,35 +232,59 @@ def report_incoming(incoming_list):
             add_separator = False
             print "- EOD -"
 
-        if data['eventtype'] == 'DEADLINE':
-            marker = 'D'
-        elif data['eventtype'] == 'SCHEDULED':
-            marker = 'S'
-        elif data['eventtype'] == 'RANGE':
-            marker = 'R'
+        marker = _get_marker(data['eventtype'])
+        accurate = data['converted_date'] == data['date']
+        # If equal - then the event has a time specified.
+        if accurate and data['delta']*24 < mark_in:
+            marker += '--> '
         else:
-            marker = ' '
-
-        if data['closest_date'] == data['closest_converted_date'] and data['delta']*8 < mark_in:
-            marker += '-->'
-        else:
-            marker += '   '
+            marker += '    '
 
         s = "%s %9s %-20s %s"
-        s = s % (marker, todo, data['closest_date'],
+        s = s % (marker, todo, _get_delta(data['delta'], accurate),
+                 data['entry'].headline[:60])
+        print s
+
+
+def report_unfinished(unfinished_list):
+    u"Report incoming tasks for following days"
+    if not unfinished_list:
+        return
+
+    unfinished_list.sort()
+    output = False
+
+    for unfinished in unfinished_list:
+        closest_converted_date, data = unfinished
+        todo = data['entry'].todo
+
+        if data['eventtype'] not in ['SCHEDULED', 'DEADLINE']:
+            continue # Don't show things with plain timestamps
+
+        marker = _get_marker(data['eventtype'])
+        marker += ' DUE'
+        accurate = data['converted_date'] == data['date']
+
+        s = "%s %9s %-20s %s"
+        s = s % (marker, todo, _get_delta(data['delta'], accurate),
                  data['entry'].headline[:60])
 
+        output = True
         print s
+    return output
 
 
 def main():
     u"Display raport and save statistics"
     db = load_data()
-    incoming = get_incoming(db)
+    incoming, unfinished = get_incoming(db)
 
+    output = report_unfinished(unfinished)
+    if output and incoming:
+        print
     report_incoming(incoming)
     rep = report_stat(incoming)
-    with open('/home/bla/.xmonad/task_stat', 'w') as f:
+    with open('/home/USERDIR/.xmonad/task_stat', 'w') as f:
         f.write(rep)
 
 
