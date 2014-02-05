@@ -14,6 +14,7 @@ import itertools
 ##
 # Config
 agenda_files = [
+    "desktop.org",
     "tasks.org",
 ]
 
@@ -137,8 +138,37 @@ def get_incoming(db):
             analyze_dates([deadline], "DEADLINE")
     return incoming, unfinished
 
+def get_totals_stat(db):
+    """
+    Count all entries versus not ignored (opened).
 
-def report_stat(incoming_list):
+    This is supposed to help push TODOs without a specified execution time.
+    """
+    count_total = 0
+    count_open = 0
+
+    for entry in db:
+        # Iterate over entries
+
+        if not entry.todo:
+            # No designation at all, not a `task'
+            continue
+
+        if (entry.datelist or entry.Scheduled() or
+            entry.Deadline() or entry.rangelist):
+            # Has time - is already counted elsewhere
+            continue
+
+        count_total += 1
+
+        # Ignore ones marked as "done/finished/closed"
+        if entry.todo not in todos_ignored:
+            count_open += 1
+
+    return count_open, count_total
+
+
+def report_stat(incoming_list, tasks_open, tasks_all):
     u"Create a simple statistic for following days"
     incoming_list.sort()
 
@@ -176,6 +206,9 @@ def report_stat(incoming_list):
         s += '-->%d' % stat_rest
 
     #s = "T %d->%d-->%d" % (stat_today, stat_tomorrow, stat_rest)
+
+    # Not timed
+    s += " %d/%d" % (tasks_open, tasks_all)
     return s
 
 def _get_marker(eventtype):
@@ -278,14 +311,20 @@ def main():
     u"Display raport and save statistics"
     db = load_data()
     incoming, unfinished = get_incoming(db)
+    tasks_open, tasks_all = get_totals_stat(db)
 
     output = report_unfinished(unfinished)
     if output and incoming:
         print
     report_incoming(incoming)
-    rep = report_stat(incoming)
-    with open('/home/USERDIR/.xmonad/task_stat', 'w') as f:
-        f.write(rep)
+
+    print "[%d/%d]" % (tasks_open, tasks_all)
+
+    
+    rep = report_stat(incoming, tasks_open, tasks_all)
+    
+    #with open('/home/USERDIR/.xmonad/task_stat', 'w') as f:
+    #    f.write(rep)
 
 
 if __name__ == "__main__":
