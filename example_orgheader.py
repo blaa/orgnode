@@ -10,6 +10,7 @@ import datetime as dt
 import os
 import Orgnode as orgnode
 import itertools
+from collections import defaultdict
 
 ##
 # Config
@@ -19,14 +20,14 @@ agenda_files = [
 ]
 
 base = "/home/USERDIR/.org/"
-
+task_stat_file = "/home/USERDIR/.xmonad/task_stat"
 # Look 5 days ahead
 horizont = 5.0
 
 # Mark tasks with time, happening in less than X hours
 mark_in = 3.0
 
-todos = ["TODO", "DONE", "DELEGATED", "CANCELLED", "DEFERRED"]
+todos = ["TODO", "DONE", "DELEGATED", "CANCELLED", "DEFERRED", "PROJECT"]
 todos_ignored = ["DONE", "CANCELLED", "DEFERRED"]
 
 def load_data():
@@ -93,13 +94,29 @@ def get_incoming(db):
     """
     today = dt.datetime.today()
 
+    # Incoming events
     incoming = []
+
+    # Past TODO events (SCHEDULED, DEADLINE) not marked as DONE
     unfinished = []
+
+    # Things to show to remind you you're responsible
+    # project entry -> {stats}
+    projects = {}
 
     for entry in db:
         # Iterate over entries
 
-        # Ignore ones marked as "done/finished/closed"
+        if entry.todo and entry.parent in projects:
+            # Count number of tasks open within a project.
+            # DONE, TODO, all types
+            current_entry = entry
+            while current_entry.parent:
+                current_entry = current_entry.parent
+                if current_entry in projects:
+                    projects[current_entry][entry.todo] += 1
+
+        # Now, ignore ones marked as "done/finished/closed"
         if entry.todo in todos_ignored:
             continue
 
@@ -136,7 +153,12 @@ def get_incoming(db):
 
         if deadline:
             analyze_dates([deadline], "DEADLINE")
-    return incoming, unfinished
+
+
+        if entry.todo == "PROJECT":
+            projects[entry] = defaultdict(lambda: 0)
+
+    return incoming, unfinished, projects
 
 def get_totals_stat(db):
     """
@@ -306,12 +328,29 @@ def report_unfinished(unfinished_list):
         print s
     return output
 
+def report_projects(projects):
+    u"Report an open projects you're responsible for"
+    if not projects:
+        return
+
+    print "PROJECTS:"
+    for project, stat in projects.iteritems():
+        print "  %-30s" % project.headline[:50],
+        stats = " ".join(["%s=%d" % (k, v) for k, v in stat.iteritems()])
+        if stats:
+            print "(%s)" % stats
+        else:
+            print
+    print
+
 
 def main():
     u"Display raport and save statistics"
     db = load_data()
-    incoming, unfinished = get_incoming(db)
+    incoming, unfinished, projects = get_incoming(db)
     tasks_open, tasks_all = get_totals_stat(db)
+
+    report_projects(projects)
 
     output = report_unfinished(unfinished)
     if output and incoming:
@@ -320,11 +359,11 @@ def main():
 
     print "[%d/%d]" % (tasks_open, tasks_all)
 
-    
+
+
     rep = report_stat(incoming, tasks_open, tasks_all)
-    
-    #with open('/home/USERDIR/.xmonad/task_stat', 'w') as f:
-    #    f.write(rep)
+    with open(task_stat_file, 'w') as f:
+        f.write(rep)
 
 
 if __name__ == "__main__":
