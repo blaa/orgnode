@@ -39,17 +39,19 @@ over Cave's, fixing proper unicode handling among other things.
 example_orgheader.py:
 Creates shell reminders upon login like emacs Agenda view. Annotated example:
 
+#+begin_src bash
 PROJECTS:
   Project 1                   (TODO=1)   # PROJECTS with their TODO/DONE tasks summed up
   PhD                         (TODO=8)
   Shopping                    (DONE=6 TODO=3)
 
 # Past deadlines come first:
-D DUE      TODO 103 days ago         Reklamować monitor LCD illama
-D DUE           2 days ago           Uporządkować Avalaca i Aardaleę
+D DUE      TODO 103 days ago         Do some fixes
+D DUE           2 days ago           Remove some other
 
 S          TODO in 2 days            FIX an error # S for SCHEDULED
 D          TODO in 4 days            Configure the server # D for incoming DEADLINE
+#+end_src
 
 It's alternative mode generate one line summary:
 1-->2 44/56
